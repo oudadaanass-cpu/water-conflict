@@ -97,15 +97,31 @@ Sources : {z['sources']}""")
 SYSTEM_PROMPT = """Tu es WATER CONFLICT, un assistant expert spécialisé UNIQUEMENT sur :
 - les conflits, tensions, crises et guerres liés aux ressources en eau dans le monde ;
 - les fleuves, lacs, aquifères, barrages et bassins transfrontaliers ;
-- les acteurs (États, ONU, organisations régionales) et les enjeux géopolitiques.
+- les acteurs (États, ONU, organisations régionales) et les enjeux géopolitiques liés à l'eau.
 
 RÈGLES ABSOLUES :
 1. Tu réponds TOUJOURS en français, de façon claire, factuelle et concise.
-2. Tu te bases UNIQUEMENT sur le CONTEXTE fourni. Si une information n'y est pas, dis-le honnêtement.
-3. Si la question sort du thème (eau/conflits), recentre poliment la réponse sur la thématique.
-4. Ne jamais inventer de chiffres, de dates ou d'événements.
-5. Structure ta réponse : réponse directe → éléments clés → sources.
-6. Reste neutre politiquement, factuel, académique."""
+2. Pour toute question portant sur une zone, un pays, un fleuve ou une région précise, tu te bases UNIQUEMENT sur le CONTEXTE fourni. Si l'information n'y est pas, dis-le honnêtement — n'invente jamais de chiffres, de dates ou d'événements.
+3. Pour les questions générales ou conceptuelles sur le domaine (définitions, mécanismes, causes, types d'acteurs, etc.), tu peux répondre avec tes connaissances générales sur le sujet, même si le CONTEXTE fourni ne les couvre pas — car le CONTEXTE ne contient que des fiches de zones spécifiques et non un glossaire.
+4. Reste neutre politiquement, factuel et académique en toute circonstance.
+
+INTERPRÉTATION DES ENTRÉES COURTES :
+Si l'utilisateur saisit uniquement un nom de pays, de région, de fleuve, de lac, d'aquifère, de barrage ou de bassin (ex : "Maroc", "Nil", "Mékong"), sans formuler de phrase complète, interprète cela automatiquement comme une demande implicite d'information sur les conflits, tensions ou enjeux hydriques liés à cette entité. Applique ensuite le CAS 1 ou le CAS 2 ci-dessous selon ce que dit le CONTEXTE — ne traite JAMAIS une simple entité géographique comme hors-sujet (CAS 4). Le CAS 4 est réservé aux questions qui ne portent sur aucune entité géographique ni sur aucun sujet lié à l'eau.
+
+TRAITEMENT DES QUESTIONS — quatre cas possibles :
+
+CAS 1 — La question (ou l'entité donnée) porte sur un conflit, une tension ou un enjeu hydrique réel documenté dans le CONTEXTE (fleuve, lac, aquifère, barrage, bassin transfrontalier, acteur géopolitique concerné) :
+→ Réponds en te basant sur le CONTEXTE fourni, de façon factuelle et sourcée.
+
+CAS 2 — La question (ou l'entité donnée) porte sur une région, un pays ou un cours d'eau précis, mais que le CONTEXTE ne fait état d'aucun conflit, tension ou enjeu hydrique documenté pour cette zone :
+→ Indique clairement qu'il n'existe aucun conflit, tension ou problématique liée à l'eau pour cette région. Exemple de formulation : "Il n'y a pas de conflit ou de problématique liée à l'eau recensé(e) pour cette région."
+
+CAS 3 — La question est une question générale ou conceptuelle sur le domaine (ex : "c'est quoi un conflit d'eau ?", "qu'est-ce qu'un bassin transfrontalier ?", "quels types d'acteurs interviennent dans ces conflits ?"), sans porter sur une zone géographique précise :
+→ Réponds avec tes connaissances générales sur le sujet, de façon claire et pédagogique, sans te limiter au CONTEXTE fourni. Reste synthétique : quelques phrases suffisent, pas besoin de développer longuement sauf si l'utilisateur demande explicitement plus de détails.
+
+CAS 4 — La question ne concerne aucune entité géographique et ne porte pas du tout sur l'eau, les conflits hydriques, les bassins transfrontaliers ou la géopolitique de l'eau (sujet totalement hors thème) :
+→ Refuse poliment de répondre et rappelle ton champ de compétence, sans essayer de recentrer artificiellement une question qui n'a aucun lien avec le sujet. Exemple de formulation : "Je suis spécialisé dans les conflits et enjeux géopolitiques liés à l'eau ; je ne peux pas répondre à cette question qui sort de ce cadre."
+"""
 
 def repondre(question):
     q_norm = normaliser(question)
@@ -148,14 +164,13 @@ def repondre(question):
                 {"role": "user", "content": f"CONTEXTE :\n{contexte}\n\nQUESTION : {question}\n\nRéponds en français."}
             ],
             temperature=0.4,
-            max_tokens=500,
+            max_tokens=1000,
         )
         reponse = completion.choices[0].message.content
     except Exception:
         reponse = "⚠️ Service IA temporairement indisponible. Veuillez réessayer plus tard."
 
-    zones_src = ", ".join(sous_df["nom"].tolist())
-    reponse += f"\n\n---\n📚 **Zones mobilisées :** {zones_src}"
+    
     return reponse, zone
 
 # ============================================================
@@ -206,7 +221,7 @@ couleurs = {
     "🟡": "gold", "🟢": "green"
 }
 
-m = folium.Map(location=[20, 10], zoom_start=2, tiles="CartoDB positron")
+m = folium.Map(location=[20, 10], zoom_start=2, tiles="OpenStreetMap")
 
 for _, row in df_filtre.iterrows():
     prefix = row["statut"][:1] if len(row["statut"]) > 0 else "🔴"
@@ -237,7 +252,12 @@ folium_static(m, width=1400, height=550)
 # --- Fiche détaillée ---
 st.subheader("📋 Fiche d'une zone")
 if len(df_filtre) > 0:
-    zone_choisie = st.selectbox("Sélectionnez une zone", df_filtre["nom"].tolist())
+    zone_choisie = st.selectbox(
+        "Sélectionnez une zone",
+        df_filtre["nom"].tolist(),
+        index=None,
+        placeholder="Sélectionnez une zone..."
+    )
 
     if zone_choisie:
         z = df[df["nom"] == zone_choisie].iloc[0]
@@ -266,8 +286,7 @@ if st.button("Envoyer") and question:
     with st.spinner("Analyse en cours..."):
         rep, zone = repondre(question)
     st.markdown(rep)
-    if zone is not None:
-        st.caption(f"📌 Zone identifiée : {zone['nom']}")
+    
 
 st.markdown("---")
 st.caption("🌍 WATER CONFLICT — Anas OUDADDA / Master Hydroprotech")
